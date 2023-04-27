@@ -4,7 +4,7 @@ from scipy import stats
 import tqdm as tqdm
 
 
-def multitaper(y, dt, nw=4):
+def multitaper(y, dt, nw=4, return_bk=False):
     """
     multi-taper spectral density estimation using DPSS sequences as described by Percival and Walden.
 
@@ -59,7 +59,8 @@ def multitaper(y, dt, nw=4):
         # update spectrum
         S_est = np.sum(bk**2 * evals_tile * Sk[:, 0:K], axis=1) / np.sum(
             bk**2 * evals_tile, axis=1)
-
+    if return_bk:
+        return S_est, f, bk
     return S_est, f
 
 
@@ -244,13 +245,18 @@ def AR(phi, sig, n, scale=1.2):
     return X[-n:]
 
 
-def ARpsd(sigma2, phi, dt, f, N=0):
+def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
     """
     The % output function will accept as input an innovations variance (S), a
     vector of lag coefficients (p), a vector of frequencies at which to
     evaluate the density (f), and the Nyquist frequency (fn)
     using modified definition from p. 392 of Percival and Walden:
     S(f) = 1/fn * sig^2/|1 - sum(p_j exp(-ij pi f/fn))|^2
+
+    if N (number of data) is provided, function returns the confidence interval for the
+    psd.
+    confidence defaults to 97.5%.
+    fac is the factor to apply based on the varaicne contributed by applied tapers
     """
     nf = len(f)
     p = len(phi)
@@ -261,19 +267,19 @@ def ARpsd(sigma2, phi, dt, f, N=0):
                                                       (nf, 1)) * dt),
                              axis=1)))**2
     
+    psd = num/den
+    
     # return confidence if user supplied number of data
-    if N != 0:
-        ff = 1 # change later see https://www.ldeo.columbia.edu/users/menke/research_notes/menke_research_note154.pdf
-        Nf = np.round(N/2) + 1
-        fn = 1/(2*dt) # nyquist
-        df = fn/Nf
-        c = ff * sigma2 * dt / (2*Nf*df)
-        var_num = 2*p*c**2
-        var_psd = var_num / (den**2)
+    if return_conf:
+        # ff = 1 # change later see https://www.ldeo.columbia.edu/users/menke/research_notes/menke_research_note154.pdf
+        var_num = sigma2**2*dt**2*fac
+        psd_sig = np.sqrt(var_num / (den**2))
 
-        return num/den, var_psd
+        psd_conf = stats.norm.ppf(conf, loc=psd, scale=psd_sig)
 
-    return num / den
+        return psd, psd_conf
+
+    return psd
 
 
 # def spectrogram(y, window=[], nw=4):
