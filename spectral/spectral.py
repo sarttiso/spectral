@@ -32,7 +32,7 @@ def multitaper(y, dt, nw=4):
     wins = windows.dpss(N, nw, Kmax=K)
     # get tapered spectra
     Sk = np.zeros((Nf, K))
-    for ii in tqdm.tqdm(range(K)):
+    for ii in range(K):
         # loop over frequencies
         for ff in range(Nf):
             # compute spectral density estimate
@@ -231,10 +231,9 @@ def yulewalker(Y, p, taper=[]):
 
 #     """
 
-def AR(phi, n):
-    scale = 1.2
+def AR(phi, sig, n, scale=1.2):
     p = len(phi)
-    w = stats.norm.rvs(loc=0, scale=1, size=int(scale*n+p))
+    w = stats.norm.rvs(loc=0, scale=sig, size=int(scale*n+p))
     X = np.zeros(len(w))
     X[0:p] = w[0:p]
     for ii in range(p, len(w)):
@@ -245,7 +244,7 @@ def AR(phi, n):
     return X[-n:]
 
 
-def ARpsd(sigma2, phi, dt, f):
+def ARpsd(sigma2, phi, dt, f, N=0):
     """
     The % output function will accept as input an innovations variance (S), a
     vector of lag coefficients (p), a vector of frequencies at which to
@@ -261,6 +260,19 @@ def ARpsd(sigma2, phi, dt, f):
                                   (p, 1)).T * np.tile(np.arange(1, p + 1),
                                                       (nf, 1)) * dt),
                              axis=1)))**2
+    
+    # return confidence if user supplied number of data
+    if N != 0:
+        ff = 1 # change later see https://www.ldeo.columbia.edu/users/menke/research_notes/menke_research_note154.pdf
+        Nf = np.round(N/2) + 1
+        fn = 1/(2*dt) # nyquist
+        df = fn/Nf
+        c = ff * sigma2 * dt / (2*Nf*df)
+        var_num = 2*p*c**2
+        var_psd = var_num / (den**2)
+
+        return num/den, var_psd
+
     return num / den
 
 
