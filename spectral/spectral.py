@@ -107,7 +107,8 @@ def multitaper(y, dt, nw=4, return_bk=False):
         return S_est, f, bk
     return S_est, f
 
-def white_psd_conf(conf, sig2, dt, K=1):
+
+def white_psd_conf(conf, sig2, dt, K=1, fac=1):
     """return confidence interval for white noise
 
     Args:
@@ -115,11 +116,13 @@ def white_psd_conf(conf, sig2, dt, K=1):
         sig2 (float): variance of white noise process
         dt (float): sampling interval
         K (int, optional): number of applied tapers. Defaults to 1.
+        fac (float, optional): Factor to apply to account for tapering. Typicall 1/N *
+        sum(win^2) Defaults to 1. Also 1 for multitaper method, which preserves variance.
 
     Returns:
         float: constant power spectral density for requested confidence level
     """
-    S_sig = 2*sig2*dt
+    S_sig = 2*sig2*dt*fac
     S_conf = stats.gamma.ppf(conf, K, scale=S_sig/K)
 
     return S_conf
@@ -150,8 +153,16 @@ def dpss_evals(N, W):
     return evals
 
 
-# generate one-sided frequency axis for given N data and dt sample spacing
 def freq(N, dt):
+    """generate one-sided frequency axis for given N data and dt sample spacing
+
+    Args:
+        N (int): number of data
+        dt (float): sampling interval
+
+    Returns:
+        array: one-sided frequency axis
+    """
     fs = 1 / dt
     fi = fs / N
     # the fi/2 just ensures that, for even numbered signals, the nyquist frequency is included
@@ -287,14 +298,18 @@ def yulewalker(Y, p, taper=[]):
     #         phi[jj-1] = phi[jj-1]
 
 
-
-
-# def ARfit(p, w, S_est, dt, S0=None, rho0=None, weights=[]):
-#     """
-
-#     """
-
 def AR(phi, sig, n, scale=1.2):
+    """instead should just use statsmodels.tsa.arima_process.ArmaProcess
+
+    Args:
+        phi (array-like): autoregressive coefficients
+        sig (float): innovation variance
+        n (int): number of data to generate
+        scale (float, optional): "burn-in" amount; 1.2 means 20% burn-in. Defaults to 1.2.
+
+    Returns:
+        _type_: _description_
+    """
     p = len(phi)
     w = stats.norm.rvs(loc=0, scale=sig, size=int(scale*n+p))
     X = np.zeros(len(w))
