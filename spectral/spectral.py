@@ -2,9 +2,37 @@ import numpy as np
 from scipy.signal import windows
 from scipy import stats
 import tqdm as tqdm
+from scipy.fft import fft
 
 
-# def periodogram(y, dt):
+def periodogram(y, dt):
+    """one sided periodogram (real-valued signals)
+
+    Args:
+        y (array): data
+        dt (float): sampling interval
+
+    Returns:
+        array: power spectral density estimate
+        array: frequency axis
+    """
+    N = len(y)
+    fy = fft(y)
+    # just need one half for real-valued signals
+    fy = fy[0:N//2+1]
+
+    f = freq(N, dt)
+
+    # square and scale
+    P = dt/N * np.abs(fy)**2
+
+    # make one-sided
+    if np.mod(N, 2):
+        P[1:] = 2*P[1:]
+    else:
+        P[1:-1] = 2*P[1:-1]
+
+    return P, f
 
 
 def multitaper(y, dt, nw=4, return_bk=False):
@@ -66,14 +94,35 @@ def multitaper(y, dt, nw=4, return_bk=False):
             bk**2 * evals_tile, axis=1)
    
     # make one sided spectrum
+    # if odd length signal, don't double zero frequency but double everything else.
+    # highest frequency is just below Nyquist
     if np.mod(N, 2):
         S_est[1:] = 2*S_est[1:]
+    # for even length signal, last frequency is Nyquist, but occurs only once, so don't
+    # dobule Nyquist or zero frequency
     else:
         S_est[1:-1] = 2*S_est[1:-1]
 
     if return_bk:
         return S_est, f, bk
     return S_est, f
+
+def white_psd_conf(conf, sig2, dt, K=1):
+    """return confidence interval for white noise
+
+    Args:
+        conf (float): [0, 1] confidence level
+        sig2 (float): variance of white noise process
+        dt (float): sampling interval
+        K (int, optional): number of applied tapers. Defaults to 1.
+
+    Returns:
+        float: constant power spectral density for requested confidence level
+    """
+    S_sig = 2*sig2*dt
+    S_conf = gamma.ppf(conf, K, scale=S_sig/K)
+
+    return S_conf
 
 
 def dpss_evals(N, W):
@@ -105,7 +154,8 @@ def dpss_evals(N, W):
 def freq(N, dt):
     fs = 1 / dt
     fi = fs / N
-    fx = np.arange(0, fs / 2 + fi, fi)
+    # the fi/2 just ensures that, for even numbered signals, the nyquist frequency is included
+    fx = np.arange(0, fs / 2 + fi/2, fi)
     return fx
 
 
