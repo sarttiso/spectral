@@ -4,6 +4,9 @@ from scipy import stats
 import tqdm as tqdm
 
 
+# def periodogram(y, dt):
+
+
 def multitaper(y, dt, nw=4, return_bk=False):
     """
     multi-taper spectral density estimation using DPSS sequences as described by Percival and Walden.
@@ -14,7 +17,7 @@ def multitaper(y, dt, nw=4, return_bk=False):
     nw: (default 4) time-halfbandwidth product
 
     OUT:
-    S_est: estimate for the power spectral density estimation
+    S_est: estimate for the power spectral density estimation (one sided, i.e. multiplied by 2)
     f: frequency axis
 
     TO DO:
@@ -32,6 +35,8 @@ def multitaper(y, dt, nw=4, return_bk=False):
     wins = windows.dpss(N, nw, Kmax=K)
     # get tapered spectra
     Sk = np.zeros((Nf, K))
+
+    # use fft you dum dum
     for ii in range(K):
         # loop over frequencies
         for ff in range(Nf):
@@ -59,6 +64,13 @@ def multitaper(y, dt, nw=4, return_bk=False):
         # update spectrum
         S_est = np.sum(bk**2 * evals_tile * Sk[:, 0:K], axis=1) / np.sum(
             bk**2 * evals_tile, axis=1)
+   
+    # make one sided spectrum
+    if np.mod(N, 2):
+        S_est[1:] = 2*S_est[1:]
+    else:
+        S_est[1:-1] = 2*S_est[1:-1]
+
     if return_bk:
         return S_est, f, bk
     return S_est, f
@@ -262,9 +274,8 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
     p = len(phi)
     num = sigma2 * dt
     den = np.abs((1 - np.sum(np.tile(phi, (1, nf)).T * np.exp(
-        -1j * 2 * np.pi * np.tile(f,
-                                  (p, 1)).T * np.tile(np.arange(1, p + 1),
-                                                      (nf, 1)) * dt),
+        -1j * 2 * np.pi * np.tile(f, (p, 1)).T * \
+                          np.tile(np.arange(1, p + 1), (nf, 1)) * dt),
                              axis=1)))**2
     
     psd = num/den
@@ -272,6 +283,7 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
     # return confidence if user supplied number of data
     if return_conf:
         # ff = 1 # change later see https://www.ldeo.columbia.edu/users/menke/research_notes/menke_research_note154.pdf
+        # still super sketchy  
         var_num = sigma2**2*dt**2*fac
         psd_sig = np.sqrt(var_num / (den**2))
 
@@ -280,7 +292,6 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
         return psd, psd_conf
 
     return psd
-
 
 # def spectrogram(y, window=[], nw=4):
 #     """
