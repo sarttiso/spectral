@@ -120,7 +120,7 @@ def white_psd_conf(conf, sig2, dt, K=1):
         float: constant power spectral density for requested confidence level
     """
     S_sig = 2*sig2*dt
-    S_conf = gamma.ppf(conf, K, scale=S_sig/K)
+    S_conf = stats.gamma.ppf(conf, K, scale=S_sig/K)
 
     return S_conf
 
@@ -342,6 +342,33 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
         return psd, psd_conf
 
     return psd
+
+def ARMA_psd(f, phi, theta, sig2, dt=1.0):
+    """theoretical power spectral density for an ARMA process evaluated at
+    frequency(ies) f
+
+    Args:
+        f (float or array): frequency or frequencies at which to evluate the PSD
+        phi (array-like): list of autoregressive coefficients
+        theta (array-like): list of moving average coefficients
+        sig2 (float): variance for white noise process
+        dt (float, optional): sampling interval. Defaults to 1.
+
+    Returns:
+        array: evaluation of theoretical PSD
+    """
+    nf = len(f)
+    p = len(phi)
+    q = len(theta)
+    num = np.abs((1 + np.sum(np.tile(theta, (1, nf)).T * np.exp(
+        -1j * 2 * np.pi * np.tile(f, (q, 1)).T * \
+                          np.tile(np.arange(1, q + 1), (nf, 1)) * dt),
+                             axis=1)))**2
+    den = np.abs((1 - np.sum(np.tile(phi, (1, nf)).T * np.exp(
+        -1j * 2 * np.pi * np.tile(f, (p, 1)).T * \
+                          np.tile(np.arange(1, p + 1), (nf, 1)) * dt),
+                             axis=1)))**2
+    return sig2*dt*num/den
 
 # def spectrogram(y, window=[], nw=4):
 #     """
