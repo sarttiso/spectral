@@ -108,6 +108,25 @@ def multitaper(y, dt, nw=4, return_bk=False):
     return S_est, f
 
 
+def LjungBox_p(residuals, order, lags=15):
+    """Ljung-Box statistic for the evaluation of the significance of autocorrelation
+
+    Args:
+        residuals (array): series to test; can be thought of as "prewhitened". typically
+        residuals after ARIMA fitting
+        order (int): p+q+d for the ARIMA fit
+        lags (int, optional): number of lags to include in evaluation. must be larger
+        than order. Defaults to 15.
+
+    Returns:
+        float: p-value. small p indicate significant autocorrelation, which is
+        inconsistent with truly prewhitened residuals
+    """
+    T = len(residuals)
+    Q = np.sum((acvs(residuals, np.arange(1, lags+1))/acvs(residuals, 0))**2/(T-np.arange(1, lags+1))) * T * (T+2)
+    return 1 - stats.chi2.cdf(Q, lags-order)
+
+
 def white_psd_conf(conf, sig2, dt, K=1, fac=1):
     """return confidence interval for white noise
 
