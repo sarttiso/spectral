@@ -27,8 +27,12 @@ def periodogram(y, dt):
     P = dt/N * np.abs(fy)**2
 
     # make one-sided
+    # if odd length signal, don't double zero frequency but double everything else.
+    # highest frequency is just below Nyquist
     if np.mod(N, 2):
         P[1:] = 2*P[1:]
+    # for even length signal, last frequency is Nyquist, but occurs only once, so don't
+    # dobule Nyquist or zero frequency
     else:
         P[1:-1] = 2*P[1:-1]
 
@@ -59,22 +63,15 @@ def multitaper(y, dt, nw=4, return_bk=False):
     Nf = len(f)
     # time indices
     t = np.arange(N)
-    # get discrete prolate spheroidal sequence (dpss) windows
-    wins = windows.dpss(N, nw, Kmax=K)
+    # get discrete prolate spheroidal sequence (dpss) windows as well as eigenvalues
+    wins, evals = windows.dpss(N, nw, Kmax=K, return_ratios=True)
     # get tapered spectra
     Sk = np.zeros((Nf, K))
 
     # use fft you dum dum
     for ii in range(K):
-        # loop over frequencies
-        for ff in range(Nf):
-            # compute spectral density estimate
-            Sk[ff, ii] = (dt * np.abs(
-                np.sum(wins[ii, :] * y *
-                       np.exp(-1j * 2 * np.pi * f[ff] * t * dt)))**2)
+        Sk[:, ii] = N * periodogram(wins[ii, :] * y, dt)[0]
 
-    # get eigenvalues for N, W
-    evals = dpss_evals(N, W)
     # implement adaptive multitaper spectral estimator (Percival and Walden, pg. 370)
     # start with eqn 369a (i.e. no estimate for weights bk)
     K_cur = 1
@@ -83,25 +80,19 @@ def multitaper(y, dt, nw=4, return_bk=False):
     bk = np.zeros((Nf, K))
     # make convenient tiled version of eigenvalues
     evals_tile = np.tile(evals[0:K], (Nf, 1))
+    # precompute variance
+    var_y = np.var(y)
+
     # iterate over equations 368a and 370a
     for ii in range(5):
+        # smart tile
+        S_est_tile = np.empty((K, *S_est.shape), S_est.dtype)
+        S_est_tile[...] = S_est
         # get weights
-        bk = np.tile(S_est, (K, 1)).T / (evals_tile * np.tile(S_est,
-                                                              (K, 1)).T +
-                                         (1 - evals_tile) * np.var(y))
+        bk = S_est_tile.T / (evals_tile * S_est_tile.T + (1 - evals_tile) * var_y)
         # update spectrum
-        S_est = np.sum(bk**2 * evals_tile * Sk[:, 0:K], axis=1) / np.sum(
-            bk**2 * evals_tile, axis=1)
-   
-    # make one sided spectrum
-    # if odd length signal, don't double zero frequency but double everything else.
-    # highest frequency is just below Nyquist
-    if np.mod(N, 2):
-        S_est[1:] = 2*S_est[1:]
-    # for even length signal, last frequency is Nyquist, but occurs only once, so don't
-    # dobule Nyquist or zero frequency
-    else:
-        S_est[1:-1] = 2*S_est[1:-1]
+        S_est = np.sum(bk**2 * evals_tile * Sk[:, 0:K], axis=1) / \
+                np.sum(bk**2 * evals_tile, axis=1)
 
     if return_bk:
         return S_est, f, bk
@@ -148,14 +139,10 @@ def white_psd_conf(conf, sig2, dt, K=1, fac=1):
 
 
 def dpss_evals(N, W):
-    """compute eigenvalues of DPSS sequence with time halfbandwidth product NW
+    """compute eigenvalues of DPSS sequence with time halfbandwidth product NW. Super
+    slow, gotta be a better way, but haven't found it yet.
 
-    :param N: [description]
-    :type N: [type]
-    :param W: [description]
-    :type W: [type]
-    :return: [description]
-    :rtype: [type]
+    Fortunately, scipy.windows.dpss returns the evals!
     """
     t = np.arange(N)
     t1, t2 = np.meshgrid(t, t)
@@ -185,7 +172,7 @@ def freq(N, dt):
     fs = 1 / dt
     fi = fs / N
     # the fi/2 just ensures that, for even numbered signals, the nyquist frequency is included
-    fx = np.arange(0, fs / 2 + fi/2, fi)
+    fx = np.arange(0, fs / 2 + fi/4, fi)
     return fx
 
 
