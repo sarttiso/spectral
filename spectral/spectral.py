@@ -19,22 +19,22 @@ def periodogram(y, dt):
     N = len(y)
     fy = fft(y)
     # just need one half for real-valued signals
-    fy = fy[0:N//2+1]
+    fy = fy[0:N // 2 + 1]
 
     f = freq(N, dt)
 
     # square and scale
-    P = dt/N * np.abs(fy)**2
+    P = dt / N * np.abs(fy)**2
 
     # make one-sided
     # if odd length signal, don't double zero frequency but double everything else.
     # highest frequency is just below Nyquist
     if np.mod(N, 2):
-        P[1:] = 2*P[1:]
+        P[1:] = 2 * P[1:]
     # for even length signal, last frequency is Nyquist, but occurs only once, so don't
     # dobule Nyquist or zero frequency
     else:
-        P[1:-1] = 2*P[1:-1]
+        P[1:-1] = 2 * P[1:-1]
 
     return P, f
 
@@ -89,7 +89,8 @@ def multitaper(y, dt, nw=4, return_bk=False):
         S_est_tile = np.empty((K, *S_est.shape), S_est.dtype)
         S_est_tile[...] = S_est
         # get weights
-        bk = S_est_tile.T / (evals_tile * S_est_tile.T + (1 - evals_tile) * var_y)
+        bk = S_est_tile.T / (evals_tile * S_est_tile.T +
+                             (1 - evals_tile) * var_y)
         # update spectrum
         S_est = np.sum(bk**2 * evals_tile * Sk[:, 0:K], axis=1) / \
                 np.sum(bk**2 * evals_tile, axis=1)
@@ -97,6 +98,80 @@ def multitaper(y, dt, nw=4, return_bk=False):
     if return_bk:
         return S_est, f, bk
     return S_est, f
+
+
+def multitaper_spectrogram(y,
+                           dt,
+                           window,
+                           noverlap=None,
+                           nw=4,
+                           optimize_overlap=False,
+                           include_last=False):
+    """Spectrogram of series via multitaper method.
+
+    Args:
+        y (arraylike): Series to spectrogram.
+        dt (float): Sampling increment.
+        window (integer): Size of window in number of data points.
+        noverlap (integer): Amount of window overlap in number of data points. Default window-1.
+        nw (int, optional): Time half bandwidth product for multitaper. Defaults to 4.
+        optimize_overlap (boolean, optional): Whether to modify overlap to ensure as
+            much data is spanned by the overlapping windows as possible. Defaults to
+            False.
+        include_last (boolean, optional): Whether to include the last window if it is
+            not the same size as window (which is generally the case). Defaults to False.
+    """
+    n = len(y)
+
+    assert window < n, 'Window is larger than length of data.'
+
+    if noverlap is None:
+        noverlap = window - 1
+    assert noverlap < window, 'Overlap must be less than window length.'
+
+    # # sampling frequency
+    # fs = 1 / dt
+
+    # # frequency axis
+    # fi = fs / window
+    # f = np.arange(0, fs / 2 + fi, fi)
+
+    # number of slides of window
+    nslides = np.floor((n - noverlap) / (window - noverlap)).astype(int)
+
+    # optimize overlap?
+    if optimize_overlap:
+        noverlap = np.ceil((nslides * window - n) / (nslides - 1)).astype(int)
+
+    # frequency axis
+    f = freq(window, dt)
+    nf = len(f)
+
+    # window, compute psds
+    S_est = np.zeros((nslides, nf))
+
+    # do all but last window
+    for ii in tqdm.tqdm(range(nslides - 1)):
+        lidx = np.round(ii * (window - noverlap))
+        ridx = np.round((ii + 1) * window - ii * noverlap)
+        S_est[ii, :], _ = multitaper(y[lidx:ridx], dt, nw=nw)
+
+    # do last window if desired
+    if ridx < n:
+        if include_last:
+            np.vstack((S_est, multitaper(y[-window:], dt, nw=nw)))
+
+    # time axis
+    tw = (window - noverlap) * dt
+    t1 = window / 2 * dt
+    t = np.arange(t1, nslides * tw + t1, tw)
+
+    # add time step for last window if requested
+    if ridx < n:
+        if include_last:
+            np.append(t, (n - window / 2) * dt)
+
+    return S_est, f, t
 
 
 def LjungBox_p(residuals, order, lags=15):
@@ -114,8 +189,10 @@ def LjungBox_p(residuals, order, lags=15):
         inconsistent with truly prewhitened residuals
     """
     T = len(residuals)
-    Q = np.sum((acvs(residuals, np.arange(1, lags+1))/acvs(residuals, 0))**2/(T-np.arange(1, lags+1))) * T * (T+2)
-    return 1 - stats.chi2.cdf(Q, lags-order)
+    Q = np.sum(
+        (acvs(residuals, np.arange(1, lags + 1)) / acvs(residuals, 0))**2 /
+        (T - np.arange(1, lags + 1))) * T * (T + 2)
+    return 1 - stats.chi2.cdf(Q, lags - order)
 
 
 def white_psd_conf(conf, sig2, dt, K=1, fac=1):
@@ -132,8 +209,8 @@ def white_psd_conf(conf, sig2, dt, K=1, fac=1):
     Returns:
         float: constant power spectral density for requested confidence level
     """
-    S_sig = 2*sig2*dt*fac
-    S_conf = stats.gamma.ppf(conf, K, scale=S_sig/K)
+    S_sig = 2 * sig2 * dt * fac
+    S_conf = stats.gamma.ppf(conf, K, scale=S_sig / K)
 
     return S_conf
 
@@ -172,7 +249,7 @@ def freq(N, dt):
     fs = 1 / dt
     fi = fs / N
     # the fi/2 just ensures that, for even numbered signals, the nyquist frequency is included
-    fx = np.arange(0, fs / 2 + fi/4, fi)
+    fx = np.arange(0, fs / 2 + fi / 4, fi)
     return fx
 
 
@@ -234,17 +311,19 @@ def acvs(X, k, taper=[], biased=True):
         assert len(taper) == n, 'taper must be same length as data'
         if biased:
             for ii, kk in enumerate(k):
-                lidx = slice(0, n-kk)
-                ridx = slice(kk, n+1)
-                s[ii] = 1 / n * np.sum(taper[lidx]*X[lidx]*taper[ridx]*X[ridx])
+                lidx = slice(0, n - kk)
+                ridx = slice(kk, n + 1)
+                s[ii] = 1 / n * np.sum(
+                    taper[lidx] * X[lidx] * taper[ridx] * X[ridx])
         else:
             for ii, kk in enumerate(k):
-                lidx = slice(0, n-kk)
-                ridx = slice(kk, n+1)
-                s[ii] = 1 / (n-kk) * np.sum(taper[lidx]*X[lidx]*taper[ridx]*X[ridx])
+                lidx = slice(0, n - kk)
+                ridx = slice(kk, n + 1)
+                s[ii] = 1 / (n - kk) * np.sum(
+                    taper[lidx] * X[lidx] * taper[ridx] * X[ridx])
 
-        s = s*np.var(X)/np.var(X*taper)
-            
+        s = s * np.var(X) / np.var(X * taper)
+
     return s
 
 
@@ -283,25 +362,25 @@ def yulewalker(Y, p, taper=[]):
 # def levinson(Y, p, taper=[]):
 
 #     s = acvs(Y, np.arange(p+1), taper=taper)
-    # need to make 2d arrays!
+# need to make 2d arrays!
 #     phi = np.zeros(p)
 #     sigma2 = np.zeros(p)
 
 #     phi[0] = s[1]/s[0]
 #     sigma2[0] = s[0]*(1-phi[0]**2)
 
-    # FINISH
-    # now iterate 
-    # for kk in range(2, p+1):
-    #     # first equation
-    #     phi[kk-1] = s[kk]
-    #     for jj in range(1, kk):
-    #         phi[kk-1] = phi[kk-1] - phi[kk-1-jj)]*s[kk-jj]
-    #     phi[kk-1] = phi[kk-1]/sigma2[kk-2]
+# FINISH
+# now iterate
+# for kk in range(2, p+1):
+#     # first equation
+#     phi[kk-1] = s[kk]
+#     for jj in range(1, kk):
+#         phi[kk-1] = phi[kk-1] - phi[kk-1-jj)]*s[kk-jj]
+#     phi[kk-1] = phi[kk-1]/sigma2[kk-2]
 
-    #     # second equation
-    #     for jj in range(1, kk):
-    #         phi[jj-1] = phi[jj-1]
+#     # second equation
+#     for jj in range(1, kk):
+#         phi[jj-1] = phi[jj-1]
 
 
 def AR(phi, sig, n, scale=1.2):
@@ -317,14 +396,14 @@ def AR(phi, sig, n, scale=1.2):
         _type_: _description_
     """
     p = len(phi)
-    w = stats.norm.rvs(loc=0, scale=sig, size=int(scale*n+p))
+    w = stats.norm.rvs(loc=0, scale=sig, size=int(scale * n + p))
     X = np.zeros(len(w))
     X[0:p] = w[0:p]
     for ii in range(p, len(w)):
         # print(ii)
         X[ii] = w[ii]
         for jj, pp in enumerate(phi):
-            X[ii] = X[ii] + pp*X[ii-jj-1]
+            X[ii] = X[ii] + pp * X[ii - jj - 1]
     return X[-n:]
 
 
@@ -348,14 +427,14 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
         -1j * 2 * np.pi * np.tile(f, (p, 1)).T * \
                           np.tile(np.arange(1, p + 1), (nf, 1)) * dt),
                              axis=1)))**2
-    
-    psd = num/den
-    
+
+    psd = num / den
+
     # return confidence if user supplied number of data
     if return_conf:
         # ff = 1 # change later see https://www.ldeo.columbia.edu/users/menke/research_notes/menke_research_note154.pdf
-        # still super sketchy  
-        var_num = sigma2**2*dt**2*fac
+        # still super sketchy
+        var_num = sigma2**2 * dt**2 * fac
         psd_sig = np.sqrt(var_num / (den**2))
 
         psd_conf = stats.norm.ppf(conf, loc=psd, scale=psd_sig)
@@ -363,6 +442,7 @@ def ARpsd(sigma2, phi, dt, f, return_conf=False, conf=0.975, fac=1):
         return psd, psd_conf
 
     return psd
+
 
 def ARMA_psd(f, phi, theta, sig2, dt=1.0):
     """theoretical power spectral density for an ARMA process evaluated at
@@ -389,7 +469,8 @@ def ARMA_psd(f, phi, theta, sig2, dt=1.0):
         -1j * 2 * np.pi * np.tile(f, (p, 1)).T * \
                           np.tile(np.arange(1, p + 1), (nf, 1)) * dt),
                              axis=1)))**2
-    return sig2*dt*num/den
+    return sig2 * dt * num / den
+
 
 # def spectrogram(y, window=[], nw=4):
 #     """
