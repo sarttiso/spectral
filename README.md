@@ -7,4 +7,8 @@
 
 - [ ] statistical tests for harmonic analysis
   - [ ] Fisher test for white noise
-  - [ ] Thompson test for colored background
+  - [x] Thompson test for colored background
+- [x] speed up multitaper
+- [x] multitaper spectrogram
+- [ ] Lomb-Scargle periodogram
+- [ ] Welch periodogram
