@@ -100,6 +100,55 @@ def multitaper(y, dt, nw=4, return_bk=False):
     return S_est, f
 
 
+def window_series(y, window, noverlap, dt=None, 
+                  optimize_overlap=False,
+                  include_last=False):
+
+    n = len(y)
+
+    assert window < n, 'Window is larger than length of data.'
+
+    if noverlap is None:
+        noverlap = window - 1
+    assert noverlap < window, 'Overlap must be less than window length.'
+
+    # number of slides of window
+    n_slides = np.floor((n - noverlap) / (window - noverlap)).astype(int)
+
+    # optimize overlap?
+    if optimize_overlap:
+        noverlap = np.ceil((n_slides * window - n) / (n_slides - 1)).astype(int)
+
+    # window, compute psds
+    windowed_data = np.zeros((n_slides, window))
+
+    # do all but last window
+    for ii in range(n_slides):
+        lidx = np.round(ii * (window - noverlap))
+        ridx = np.round((ii + 1) * window - ii * noverlap)
+        windowed_data[ii, :] = y[lidx:ridx]
+
+    if ridx < n:
+        if include_last:
+            windowed_data = np.vstack((windowed_data, y[-window:]))
+
+    # generate time axis if requested
+    if dt is not None:
+        # time axis
+        tw = (window - noverlap) * dt
+        t1 = window / 2 * dt
+        t = np.arange(t1, n_slides * tw + t1, tw)
+
+        # add time step for last window if requested
+        if ridx < n:
+            if include_last:
+                t = np.append(t, (n - window / 2) * dt)
+
+        return windowed_data, t
+    else:
+        return windowed_data
+
+
 def multitaper_spectrogram(y,
                            dt,
                            window,
@@ -121,55 +170,23 @@ def multitaper_spectrogram(y,
         include_last (boolean, optional): Whether to include the last window if it is
             not the same size as window (which is generally the case). Defaults to False.
     """
-    n = len(y)
-
-    assert window < n, 'Window is larger than length of data.'
-
-    if noverlap is None:
-        noverlap = window - 1
-    assert noverlap < window, 'Overlap must be less than window length.'
-
-    # # sampling frequency
-    # fs = 1 / dt
-
-    # # frequency axis
-    # fi = fs / window
-    # f = np.arange(0, fs / 2 + fi, fi)
-
-    # number of slides of window
-    nslides = np.floor((n - noverlap) / (window - noverlap)).astype(int)
-
-    # optimize overlap?
-    if optimize_overlap:
-        noverlap = np.ceil((nslides * window - n) / (nslides - 1)).astype(int)
+    # get windowed data
+    y_windowed, t = window_series(y, window, noverlap,
+                               dt=dt,
+                               optimize_overlap=optimize_overlap,
+                               include_last=include_last)
+    n_slides = y_windowed.shape[0]
 
     # frequency axis
     f = freq(window, dt)
     nf = len(f)
 
     # window, compute psds
-    S_est = np.zeros((nslides, nf))
+    S_est = np.zeros((n_slides, nf))
 
     # do all but last window
-    for ii in tqdm.tqdm(range(nslides - 1)):
-        lidx = np.round(ii * (window - noverlap))
-        ridx = np.round((ii + 1) * window - ii * noverlap)
-        S_est[ii, :], _ = multitaper(y[lidx:ridx], dt, nw=nw)
-
-    # do last window if desired
-    if ridx < n:
-        if include_last:
-            np.vstack((S_est, multitaper(y[-window:], dt, nw=nw)))
-
-    # time axis
-    tw = (window - noverlap) * dt
-    t1 = window / 2 * dt
-    t = np.arange(t1, nslides * tw + t1, tw)
-
-    # add time step for last window if requested
-    if ridx < n:
-        if include_last:
-            np.append(t, (n - window / 2) * dt)
+    for ii in tqdm.tqdm(range(n_slides)):
+        S_est[ii, :], _ = multitaper(y_windowed[ii, :], dt, nw=nw)
 
     return S_est, f, t
 
