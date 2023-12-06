@@ -2,7 +2,7 @@ import numpy as np
 from scipy.signal import windows
 from scipy import stats
 import tqdm as tqdm
-from scipy.fft import fft
+from scipy.fft import fft, fftfreq
 
 
 def periodogram(y, dt):
@@ -213,6 +213,59 @@ def white_psd_conf(conf, sig2, dt, K=1, fac=1):
     S_conf = stats.gamma.ppf(conf, K, scale=S_sig / K)
 
     return S_conf
+
+
+def f_test_thom(y, dt, nw, confs=None):
+    """Perform Thomson's test for periodicity in colored noise. Notation follows that of
+    Percival and Walden, section 10.11, pg. 496-501.
+
+    Args:
+        y (arraylike): Series for which to evaluate periodicity
+        dt (float): Sampling interval
+        nw (float): time-halfbandwidth product
+        confs (arraylike, optional): List of confidence levels to evaluate f-values for. Defaults to None.
+
+    Returns:
+        F_stat: Thomson's test statistic at each Fourier frequency (one-sided)
+        f: Fourier frequencies
+        levels (optional): F values for requested confidence levels.
+    """
+
+    N = len(y)
+    K = int(2*nw - 1)
+
+    # pg. 496, 497, P&W
+    hk = windows.dpss(N, nw, Kmax=K)
+    Hk0 = np.zeros(K, dtype='complex_')
+    Jk = np.zeros((K, N), dtype='complex_')
+    for ii in range(K):
+        Jk[ii, :] = np.sqrt(dt) * fft(hk[ii, :]*y)
+        Hk0[ii] = dt * np.sum(hk[ii, :])
+    # pg. 499, eqn 499a
+    C1_hat = np.sqrt(dt) * \
+        np.sum(Jk[slice(0, K, 2), :]*Hk0[slice(0, K, 2)].reshape(-1, 1), axis=0) / \
+            np.sum(Hk0[slice(0, K, 2)]**2)
+    # pg. 499
+    Jk_hat = np.zeros((K, N), dtype='complex_')
+    for ii in range(K):
+        Jk_hat[ii, :] = C1_hat * Hk0[ii] / np.sqrt(dt)
+
+    # eqn 499c
+    F_stat = ((K-1) * np.abs(C1_hat)**2 * np.sum(Hk0**2)) / \
+        (dt * np.sum(np.abs(Jk - Jk_hat)**2, axis=0)) 
+
+    f = fftfreq(N, dt)[:N//2]
+    F_stat = F_stat[:N//2]
+
+    if confs is None:
+        return F_stat, f
+    
+    # if confidence levels are requested, compute them from F dist
+    levels = []
+    for conf in confs:
+        levels.append(stats.f.ppf(conf, 2, 2*K-2)) 
+    
+    return F_stat, f, levels
 
 
 def dpss_evals(N, W):
